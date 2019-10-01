@@ -1392,6 +1392,9 @@ TS_CHECK_BROTLI
 # Check for optional luajit library
 TS_CHECK_LUAJIT
 
+# Check for optional WAVM library
+TS_CHECK_WAVM
+
 #
 # Enable experimental/uri_singing plugin
 # This is here, instead of above, because it needs to know if PCRE is available.

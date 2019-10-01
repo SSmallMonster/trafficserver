@@ -110,6 +110,10 @@ if HAS_MYSQL
 include experimental/mysql_remap/Makefile.inc
 endif
 
+if HAS_WAVM
+include experimental/wasm/Makefile.inc
+endif
+
 endif
 
 TESTS_ENVIRONMENT = LSAN_OPTIONS=suppressions=suppression.txt
