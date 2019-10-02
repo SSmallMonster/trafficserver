@@ -3,7 +3,7 @@
 #include <memory>
 
 #ifdef WAVM_API
-#include "extensions/common/wasm/wavm/wavm.h"
+#include "wavm.h"
 #endif
 
 namespace Wasm
