@@ -21,6 +21,7 @@
 #include <getopt.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <string>
 
@@ -28,23 +29,17 @@
 
 #define WASM_DEBUG_TAG "wasm"
 
-struct WasmInstanceConfig {
-  std::string wasm_filename;
-};
-
-#define TS_WASM_HTTP_FETCH_SUCCESS ((TsEvent)(-1000))
-#define TS_WASM_HTTP_FETCH_FAILURE ((TsEvent)(-1001))
-#define TS_WASM_HTTP_FETCH_TIMEOUT ((TsEvent)(-1002))
-
+// This is one reason why python is more popular than C++.
+// str = open(fn, 'r').read()
 static inline int read_file(std::string fn, std::string* s) {
-  auto fd = open(fn.c_str(), O_RDONLY | O_NOATIME, 00660);
+  auto fd = open(fn.c_str(), O_RDONLY);
   if (fd < 0) {
     return -1;
   }
   auto n = ::lseek(fd, 0, SEEK_END);
   ::lseek(fd, 0, SEEK_SET);
-  s->reserve(n);
-  auto nn = ::read(fd, (char*)s->begin(), n);
+  s->resize(n);
+  auto nn = ::read(fd, (char*)const_cast<char*>(&*s->begin()), n);
   if (nn != (ssize_t)n) {
     return -1;
   }
@@ -106,103 +101,20 @@ TSRemapDoRemap(void *ih, TSHttpTxn rh, TSRemapRequestInfo *rri)
   }
 #endif
 
-int
-http_event_handler(TSCont contp, TSEvent event, void *data)
-{
-  TSHttpTxn txnp;
-  auto context = (Context*)TSContDataGet(contp);
-
-  TSMutexLock(context->global_mutex());
-
-  switch (event) {
-
-  case TS_EVENT_HTTP_POST_REMAP:
-    break;
-
-  case TS_EVENT_HTTP_CACHE_LOOKUP_COMPLETE:
-    break;
-
-  case TS_EVENT_HTTP_SEND_REQUEST_HDR:
-    break;
-
-  case TS_EVENT_HTTP_READ_RESPONSE_HDR:
-    break;
-
-  case TS_EVENT_HTTP_SEND_RESPONSE_HDR:
-    break;
-
-  case TS_EVENT_HTTP_READ_REQUEST_HDR:
-    break;
-
-  case TS_EVENT_HTTP_TXN_START:
-    break;
-
-  case TS_EVENT_HTTP_PRE_REMAP:
-    break;
-
-  case TS_EVENT_HTTP_OS_DNS:
-    break;
-
-  case TS_EVENT_HTTP_READ_CACHE_HDR:
-    break;
-
-  case TS_EVENT_HTTP_TXN_CLOSE:
-    break;
-
-  case TS_WASM_HTTP_FETCH_SUCCESS:
-    break;
-
-  case TS_WASM_HTTP_FETCH_FAILURE:
-    break;
-
-  case TS_WASM_HTTP_FETCH_TIMEOUT:
-    break;
-
-  default:
-    break;
-  }
-
-  TSMutexUnlock(ccontext->global_mutex());
-
-  if (result == 0) {
-    TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
-  } else if (result < 0) {
-    TSHttpTxnReenable(txnp, TS_EVENT_HTTP_ERROR);
-  } else {
-    // wait for async operation
-  }
-  return 0;
-}
-
-Context::Context(TSCont global_contp, TSHttpTxn txnp) {
-  auto config = (WasmInstanceConfig *)TSContDataGet(global_contp);
-
-  TSCont txn_contp = TSContCreate(http_event_handler, nullptr);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_CACHE_LOOKUP_COMPLETE_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_READ_REQUEST_HDR_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_PRE_REMAP_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_POST_REMAP_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_OS_DNS_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_REQUEST_TRANSFORM_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_SEND_REQUEST_HDR_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_READ_CACHE_HDR_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_READ_RESPONSE_HDR_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_SEND_RESPONSE_HDR_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_RESPONSE_TRANSFORM_HOOK, txn_contp);
-  TSHttpTxnHookAdd(txnp, TS_HTTP_TXN_CLOSE_HOOK, txn_contp);
-}
-
 static void
-reloadWasm(WasmInstanceConfig *config ATS_UNUSED)
+reloadWasm(Wasm::WasmInstanceConfig *config)
 {
+  (void)config;
   TSDebug(WASM_DEBUG_TAG, "[%s] ignoring reload for now", __FUNCTION__);
 }
 
 static int
-configHandler(TSCont contp, TSEvent event ATS_UNUSED, void *edata ATS_UNUSED)
+configHandler(TSCont contp, TSEvent event, void *data)
 {
+  (void)event;
+  (void)data;
   TSDebug(WASM_DEBUG_TAG, "[%s] calling configuration handler", __FUNCTION__);
-  auto *config = (WasmInstanceConfig *)TSContDataGet(contp);
+  auto *config = (Wasm::WasmInstanceConfig *)TSContDataGet(contp);
   reloadWasm(config);
   return 0;
 }
@@ -210,8 +122,13 @@ configHandler(TSCont contp, TSEvent event ATS_UNUSED, void *edata ATS_UNUSED)
 static int
 globalHookHandler(TSCont contp, TSEvent event, void *data)
 {
-  TSDebug(WASM_DEBUG_FLAG, "[%s]: %d", __FUNCTION__, (int)event);
-  TSContDataSet(txn_contp, new Context(contp, (TSHttpTxn)data);
+  TSDebug(WASM_DEBUG_TAG, "[%s]: %d", __FUNCTION__, (int)event);
+  auto config = (Wasm::WasmInstanceConfig *)TSContDataGet(contp);
+  auto context = new Wasm::Context(config->wasm.get(), "");
+  auto txnp = (TSHttpTxn)data;
+  auto txn_contp = context->initialize(contp, txnp);
+  TSContDataSet(txn_contp, context);
+  context->onCreate();
   TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
   return 0;
 }
@@ -251,7 +168,7 @@ TSPluginInit(int argc, const char *argv[])
     }
   }
 
-  if (loglevel > (int)LogLevel::critical) {
+  if (loglevel > (int)Wasm::LogLevel::critical) {
     TSError("[wasm][%s] invalid loglevel: %d", __FUNCTION__, loglevel);
     return;
   }
@@ -261,24 +178,21 @@ TSPluginInit(int argc, const char *argv[])
     return;
   }
 
-  auto config = std::unique_ptr<WasmInstanceConfig>((WasmInstanceConfig *)TSmalloc(sizeof(WasmInstanceConfig)));
-
+  auto config = std::make_unique<Wasm::WasmInstanceConfig>();
   config->wasm_filename = std::string(argv[optind]);
   if (*config->wasm_filename.begin() != '/') {
     config->wasm_filename = std::string(TSConfigDirGet()) + "/" + config->wasm_filename;
   }
-  auto wasm_vm = createWasmVm("wavm");
   std::string code;
   if (read_file(config->wasm_filename, &code) < 0) {
     TSError("[wasm][%s] wasm unable to read file '%s'", __FUNCTION__, config->wasm_filename.c_str());
     return;
   }
-  if (!wasm_vm->load(code, true)) {
-    TSError("[wasm][%s] wasm unable to load file '%s'", __FUNCTION__, config->wasm_filename.c_str());
+  config->wasm = Wasm::createWasm("", "wavm", code, "", "");
+  if (!config->wasm) {
+    TSError("[wasm][%s] wasm unable to create vm", __FUNCTION__);
     return;
   }
-  wasm_vm->link("wasm");
-
 
   TSCont global_contp = TSContCreate(globalHookHandler, nullptr);
   if (!global_contp) {
