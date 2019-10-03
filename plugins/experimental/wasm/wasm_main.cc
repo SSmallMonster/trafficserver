@@ -31,7 +31,9 @@
 
 // This is one reason why python is more popular than C++.
 // str = open(fn, 'r').read()
-static inline int read_file(std::string fn, std::string* s) {
+static inline int
+read_file(std::string fn, std::string *s)
+{
   auto fd = open(fn.c_str(), O_RDONLY);
   if (fd < 0) {
     return -1;
@@ -39,7 +41,7 @@ static inline int read_file(std::string fn, std::string* s) {
   auto n = ::lseek(fd, 0, SEEK_END);
   ::lseek(fd, 0, SEEK_SET);
   s->resize(n);
-  auto nn = ::read(fd, (char*)const_cast<char*>(&*s->begin()), n);
+  auto nn = ::read(fd, (char *)const_cast<char *>(&*s->begin()), n);
   if (nn != (ssize_t)n) {
     return -1;
   }
@@ -108,9 +110,9 @@ static int
 globalHookHandler(TSCont contp, TSEvent event, void *data)
 {
   TSDebug(WASM_DEBUG_TAG, "[%s]: %d", __FUNCTION__, (int)event);
-  auto config = (Wasm::WasmInstanceConfig *)TSContDataGet(contp);
-  auto context = new Wasm::Context(config->wasm.get(), config->wasm->getRootContext("")->id());
-  auto txnp = (TSHttpTxn)data;
+  auto config    = (Wasm::WasmInstanceConfig *)TSContDataGet(contp);
+  auto context   = new Wasm::Context(config->wasm.get(), config->wasm->getRootContext("")->id());
+  auto txnp      = (TSHttpTxn)data;
   auto txn_contp = context->initialize(contp, txnp);
   TSContDataSet(txn_contp, context);
   context->onCreate();
@@ -163,7 +165,7 @@ TSPluginInit(int argc, const char *argv[])
     return;
   }
 
-  auto config = std::make_unique<Wasm::WasmInstanceConfig>();
+  auto config           = std::make_unique<Wasm::WasmInstanceConfig>();
   config->wasm_filename = std::string(argv[optind]);
   if (*config->wasm_filename.begin() != '/') {
     config->wasm_filename = std::string(TSConfigDirGet()) + "/" + config->wasm_filename;

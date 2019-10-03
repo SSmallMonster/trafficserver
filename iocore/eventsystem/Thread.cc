@@ -104,6 +104,6 @@ Thread::start(const char *name, void *stack, size_t stacksize, ThreadFunction co
   ink_zero(p->name);
   ink_strlcpy(p->name, name, MAX_THREAD_NAME_LENGTH);
   stacksize = DEFAULT_STACKSIZE * 16;
-  stack = 0;
+  stack     = 0;
   ink_thread_create(&tid, spawn_thread_internal, p, 0, stacksize, stack);
 }

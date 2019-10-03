@@ -29,17 +29,29 @@ enum class WasmResult : uint32_t {
   ResultMismatch = 9,
 };
 
-inline std::string toString(WasmResult r) {
+inline std::string
+toString(WasmResult r)
+{
   switch (r) {
-    case WasmResult::Ok: return "Ok";
-    case WasmResult::NotFound : return "NotFound";
-    case WasmResult::BadArgument : return "BadArgument";
-    case WasmResult::SerializationFailure : return "SerializationFailure";
-    case WasmResult::ParseFailure : return "ParseFailure";
-    case WasmResult::BadExpression : return "BadExpression";
-    case WasmResult::InvalidMemoryAccess : return "InvalidMemoryAccess";
-    case WasmResult::Empty : return "Empty";
-    case WasmResult::CasMismatch : return "CasMismatch";
-    case WasmResult::ResultMismatch : return "ResultMismatch";
+  case WasmResult::Ok:
+    return "Ok";
+  case WasmResult::NotFound:
+    return "NotFound";
+  case WasmResult::BadArgument:
+    return "BadArgument";
+  case WasmResult::SerializationFailure:
+    return "SerializationFailure";
+  case WasmResult::ParseFailure:
+    return "ParseFailure";
+  case WasmResult::BadExpression:
+    return "BadExpression";
+  case WasmResult::InvalidMemoryAccess:
+    return "InvalidMemoryAccess";
+  case WasmResult::Empty:
+    return "Empty";
+  case WasmResult::CasMismatch:
+    return "CasMismatch";
+  case WasmResult::ResultMismatch:
+    return "ResultMismatch";
   }
 }
