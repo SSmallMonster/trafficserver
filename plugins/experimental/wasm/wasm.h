@@ -20,7 +20,12 @@ class Context;
 class Wasm;
 class WasmVm;
 
-using HeaderMap = std::map<std::string, std::string>;
+struct HeaderMap {
+  TSMBuffer bufp{nullptr};
+  TSMLoc hdr_loc{nullptr};
+
+  int size();
+};
 
 using Pairs = std::vector<std::pair<std::string_view, std::string_view>>;
 using PairsWithStringValues = std::vector<std::pair<std::string_view, std::string>>;
@@ -227,8 +232,7 @@ protected:
   void onHttpCallSuccess(uint32_t token);
   void onHttpCallFailure(uint32_t token);
 
-  HeaderMap* getMap(HeaderMapType type);
-  const HeaderMap* getConstMap(HeaderMapType type);
+  HeaderMap getHeaderMap(HeaderMapType type);
 
   std::string makeLogPrefix() const;
 

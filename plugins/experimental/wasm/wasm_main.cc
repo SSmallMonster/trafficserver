@@ -86,21 +86,6 @@ TSRemapDoRemap(void *ih, TSHttpTxn rh, TSRemapRequestInfo *rri)
 }
 #endif
 
-#if 0
-  TSMBuffer bufp;
-  TSMLoc hdr_loc;
-  TSMLoc url_loc;
-  if (!http_ctx->client_request_bufp) {
-    if (TSHttpTxnClientReqGet(txnp, &bufp, &hdr_loc) == TS_SUCCESS) {
-      http_ctx->client_request_bufp = bufp;
-      http_ctx->client_request_hdrp = hdr_loc;
-      if (TSHttpHdrUrlGet(bufp, hdr_loc, &url_loc) == TS_SUCCESS) {
-        http_ctx->client_request_url = url_loc;
-      }
-    }
-  }
-#endif
-
 static void
 reloadWasm(Wasm::WasmInstanceConfig *config)
 {
@@ -124,7 +109,7 @@ globalHookHandler(TSCont contp, TSEvent event, void *data)
 {
   TSDebug(WASM_DEBUG_TAG, "[%s]: %d", __FUNCTION__, (int)event);
   auto config = (Wasm::WasmInstanceConfig *)TSContDataGet(contp);
-  auto context = new Wasm::Context(config->wasm.get(), "");
+  auto context = new Wasm::Context(config->wasm.get(), config->wasm->getRootContext("")->id());
   auto txnp = (TSHttpTxn)data;
   auto txn_contp = context->initialize(contp, txnp);
   TSContDataSet(txn_contp, context);

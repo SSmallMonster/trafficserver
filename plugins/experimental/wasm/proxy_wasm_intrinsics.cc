@@ -3,8 +3,8 @@
 
 static std::unordered_map<std::string, RootFactory>* root_factories = nullptr;
 static std::unordered_map<std::string, ContextFactory>* context_factories = nullptr;
-static std::unordered_map<int32_t, std::unique_ptr<ContextBase>> context_map;
-static std::unordered_map<std::string, RootContext*> root_context_map;
+static std::unordered_map<int32_t, std::unique_ptr<ContextBase>>* context_map = nullptr;
+static std::unordered_map<std::string, RootContext*>* root_context_map = nullptr;
 
 RegisterContextFactory::RegisterContextFactory(ContextFactory context_factory,
                                                RootFactory root_factory, StringView root_id) {
@@ -19,9 +19,12 @@ RegisterContextFactory::RegisterContextFactory(ContextFactory context_factory,
 }
 
 static Context* ensureContext(uint32_t context_id, uint32_t root_context_id) {
-  auto e = context_map.insert(std::make_pair(context_id, nullptr));
+  if (!context_map) {
+    context_map = new std::unordered_map<int32_t, std::unique_ptr<ContextBase>>();
+  }
+  auto e = context_map->insert(std::make_pair(context_id, nullptr));
   if (e.second) {
-    RootContext* root = context_map[root_context_id].get()->asRoot();
+    RootContext* root = (*context_map)[root_context_id].get()->asRoot();
     std::string root_id = std::string(root->root_id());
     if (!context_factories) {
       e.first->second = std::make_unique<Context>(context_id, root);
@@ -39,14 +42,18 @@ static Context* ensureContext(uint32_t context_id, uint32_t root_context_id) {
 }
 
 static RootContext* ensureRootContext(uint32_t context_id, std::unique_ptr<WasmData> root_id) {
-  auto it = context_map.find(context_id);
-  if (it != context_map.end()) {
+  if (!root_context_map) root_context_map = new std::unordered_map<std::string, RootContext*>();
+  if (!context_map) {
+    context_map = new std::unordered_map<int32_t, std::unique_ptr<ContextBase>>();
+  }
+  auto it = context_map->find(context_id);
+  if (it != context_map->end()) {
     return it->second->asRoot();
   }
   if (!root_factories) {
     auto context = std::make_unique<RootContext>(context_id, root_id->view());
     RootContext* root_context = context->asRoot();
-    context_map[context_id] = std::move(context);
+    (*context_map)[context_id] = std::move(context);
     return root_context;
   }
   auto root_id_string = root_id->toString();
@@ -55,44 +62,48 @@ static RootContext* ensureRootContext(uint32_t context_id, std::unique_ptr<WasmD
   if (factory != root_factories->end()) {
     auto context = factory->second(context_id, root_id->view());
     root_context = context->asRoot();
-    root_context_map[root_id_string] = root_context;
-    context_map[context_id] = std::move(context);
+    (*root_context_map)[root_id_string] = root_context;
+    (*context_map)[context_id] = std::move(context);
   } else {
     // Default handlers.
     auto context = std::make_unique<RootContext>(context_id, root_id->view());
     root_context = context->asRoot();
-    context_map[context_id] = std::move(context);
+    (*context_map)[context_id] = std::move(context);
   }
   return root_context;
 }
 
 static ContextBase* getContextBase(uint32_t context_id) {
-  auto it = context_map.find(context_id);
-  if (it == context_map.end() || !(it->second->asContext() || it->second->asRoot())) {
+  if (!context_map) return nullptr;
+  auto it = context_map->find(context_id);
+  if (it == context_map->end() || !(it->second->asContext() || it->second->asRoot())) {
     return nullptr;
   }
   return it->second.get();
 }
 
 Context* getContext(uint32_t context_id) {
-  auto it = context_map.find(context_id);
-  if (it == context_map.end() || !it->second->asContext()) {
+  if (!context_map) return nullptr;
+  auto it = context_map->find(context_id);
+  if (it == context_map->end() || !it->second->asContext()) {
     return nullptr;
   }
   return it->second->asContext();
 }
 
 static RootContext* getRootContext(uint32_t context_id) {
-  auto it = context_map.find(context_id);
-  if (it == context_map.end() || !it->second->asRoot()) {
+  if (!context_map) return nullptr;
+  auto it = context_map->find(context_id);
+  if (it == context_map->end() || !it->second->asRoot()) {
     return nullptr;
   }
   return it->second->asRoot();
 }
 
 RootContext* getRoot(StringView root_id) {
-  auto it = root_context_map.find(std::string(root_id));
-  if (it != root_context_map.end()) {
+  if (!root_context_map) return nullptr;
+  auto it = root_context_map->find(std::string(root_id));
+  if (it != root_context_map->end()) {
     return it->second;
   }
   return nullptr;
@@ -181,7 +192,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onLog(uint32_t context_id) {
 
 extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onDelete(uint32_t context_id) {
   getContext(context_id)->onDelete();
-  context_map.erase(context_id);
+  context_map->erase(context_id);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void
@@ -195,39 +206,6 @@ proxy_onHttpCallResponse(uint32_t context_id, uint32_t token, uint32_t header_pa
           std::make_unique<WasmData>(reinterpret_cast<char*>(body_ptr), body_size),
           std::make_unique<WasmData>(reinterpret_cast<char*>(trailer_pairs_ptr),
                                      trailer_pairs_size));
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcCreateInitialMetadata(uint32_t context_id,
-                                                                       uint32_t token) {
-  getRootContext(context_id)->onGrpcCreateInitialMetadata(token);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcReceiveInitialMetadata(uint32_t context_id,
-                                                                        uint32_t token) {
-  getRootContext(context_id)->onGrpcReceiveInitialMetadata(token);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcReceiveTrailingMetadata(uint32_t context_id,
-                                                                         uint32_t token) {
-  getRootContext(context_id)->onGrpcReceiveTrailingMetadata(token);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcReceive(uint32_t context_id, uint32_t token,
-                                                         uint32_t response_ptr,
-                                                         uint32_t response_size) {
-  getRootContext(context_id)
-      ->onGrpcReceive(
-          token, std::make_unique<WasmData>(reinterpret_cast<char*>(response_ptr), response_size));
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcClose(uint32_t context_id, uint32_t token,
-                                                       uint32_t status_code,
-                                                       uint32_t status_message_ptr,
-                                                       uint32_t status_message_size) {
-  getRootContext(context_id)
-      ->onGrpcClose(token, static_cast<GrpcStatus>(status_code),
-                    std::make_unique<WasmData>(reinterpret_cast<char*>(status_message_ptr),
-                                               status_message_size));
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onQueueReady(uint32_t context_id, uint32_t token) {

@@ -217,12 +217,6 @@ public:
   virtual void onHttpCallResponse(uint32_t token, std::unique_ptr<WasmData> header_pairs,
                                   std::unique_ptr<WasmData> body,
                                   std::unique_ptr<WasmData> trailer_pairs);
-  virtual void onGrpcCreateInitialMetadata(uint32_t token);
-  virtual void onGrpcReceiveInitialMetadata(uint32_t token);
-  virtual void onGrpcReceiveTrailingMetadata(uint32_t token);
-  virtual void onGrpcReceive(uint32_t token, std::unique_ptr<WasmData> message);
-  virtual void onGrpcClose(uint32_t token, GrpcStatus status, std::unique_ptr<WasmData> message);
-
   // Default high level HTTP/gRPC interface.  NB: overriding the low level interface will disable
   // this interface. Returns false on setup error.
   bool httpCall(StringView uri, const HeaderStringPairs& request_headers, StringView request_body,

@@ -38,13 +38,6 @@
    extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onLog(uint32_t context_id);
    // The Context in the proxy has been destroyed and no further calls will be coming.
    extern "C" ENSCRIPTEN_KEEPALIVE void proxy_onDelete(uint32_t context_id);
-   extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcCreateInitialMetadata(uint32_t context_id, uint32_t token);
-   extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcReceiveInitialMetadata(uint32_t context_id, uint32_t token);
-   extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcTrailingMetadata(uint32_t context_id, uint32_t token);
-   extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcReceive(uint32_t context_id, uint32_t token,
-     uint32_t response_ptr, uint32_t response_size);
-   extern "C" EMSCRIPTEN_KEEPALIVE void proxy_onGrpcClose(uint32_t context_id, uint32_t token,
-     uint32_t status_code, uint32_t status_message_ptr, uint32_t status_message_size);
 */
 // clang-format on
 

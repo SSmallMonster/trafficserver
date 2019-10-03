@@ -280,16 +280,6 @@ void exportPairs(Context* context, const Pairs& pairs, uint64_t* ptr_ptr, uint64
   *size_ptr = size;
 }
 
-#if 0
-HeaderMap buildHeaderMapFromPairs(const Pairs& pairs) {
-  HeaderMap map;
-  for (auto& p : pairs) {
-    map[std::string(p.first)] = std::string(p.second);
-  }
-  return map;
-}
-#endif
-
 const uint8_t* decodeVarint(const uint8_t* pos, const uint8_t* end, uint32_t* out) {
   uint32_t ret = 0;
   int shift = 0;
@@ -920,96 +910,113 @@ WasmResult Context::enqueueSharedQueue(uint32_t token, std::string_view value) {
   return global_shared_data.enqueue(token, value);
 }
 
-// Header/Trailer/Metadata Maps.
-HeaderMap* Context::getMap(HeaderMapType type) {
-  switch (type) {
-  case HeaderMapType::RequestHeaders:
-    return nullptr;
-  case HeaderMapType::RequestTrailers:
-    return nullptr;
-  case HeaderMapType::ResponseHeaders:
-    return nullptr;
-  case HeaderMapType::ResponseTrailers:
-    return nullptr;
-  default:
-  case HeaderMapType::GrpcCreateInitialMetadata:
-  case HeaderMapType::GrpcReceiveInitialMetadata:
-    return nullptr;
-  }
+int HeaderMap::size() {
+  if (bufp)
+    return TSMimeHdrFieldsCount(bufp, hdr_loc);
+  return 0;
 }
 
-const HeaderMap* Context::getConstMap(HeaderMapType type) {
+HeaderMap Context::getHeaderMap(HeaderMapType type) {
+  HeaderMap map;
   switch (type) {
   case HeaderMapType::RequestHeaders:
-    return nullptr;
+    if (TSHttpTxnClientReqGet(txnp_, &map.bufp, &map.hdr_loc) == TS_SUCCESS) {
+      return map;
+    }
+    return {};
   case HeaderMapType::RequestTrailers:
-    return nullptr;
+    return {};
   case HeaderMapType::ResponseHeaders:
-    return nullptr;
+    if (TSHttpTxnServerRespGet(txnp_, &map.bufp, &map.hdr_loc) == TS_SUCCESS) {
+      return map;
+    }
+    return {};
   case HeaderMapType::ResponseTrailers:
-    return nullptr;
+    return {};
   default:
   case HeaderMapType::GrpcCreateInitialMetadata:
   case HeaderMapType::GrpcReceiveInitialMetadata:
-    return nullptr;
+    return {};
   }
 }
 
 void Context::addHeaderMapValue(HeaderMapType type, std::string_view key,
                                 std::string_view value) {
-  auto map = getMap(type);
-  if (!map) {
+  auto map = getHeaderMap(type);
+  if (!map.bufp) return;
+  auto field_loc = TSMimeHdrFieldFind(map.bufp, map.hdr_loc, key.data(), (int)key.size());
+  if (TS_NULL_MLOC == field_loc) {
+    if (TS_SUCCESS != TSMimeHdrFieldCreateNamed(map.bufp, map.hdr_loc, key.data(), (int)key.size(), &field_loc))
+      return;
+  }
+  if (TS_SUCCESS == TSMimeHdrFieldValueStringSet(map.bufp, map.hdr_loc, field_loc, -1, value.data(), (int)value.size())) {
+    TSMimeHdrFieldAppend(map.bufp, map.hdr_loc, field_loc);
     return;
   }
+  TSHandleMLocRelease(map.bufp, map.hdr_loc, field_loc);
 }
 
 std::string_view Context::getHeaderMapValue(HeaderMapType type, std::string_view key) {
-  auto map = getConstMap(type);
-  if (!map) {
-    return "";
+  auto map = getHeaderMap(type);
+  if (map.bufp) {
+    auto loc = TSMimeHdrFieldFind(map.bufp, map.hdr_loc, key.data(), (int)key.size());
+    if (TS_NULL_MLOC != loc) {
+      int vlen = 0;
+      // TODO: add support for dups
+      auto v = TSMimeHdrFieldValueStringGet(map.bufp, map.hdr_loc, loc, 0, &vlen);
+      return {v, static_cast<size_t>(vlen)};
+    }
   }
   return "";
 }
 
-Pairs headerMapToPairs(const HeaderMap* map) {
-  if (!map) {
+Pairs headerMapToPairs(HeaderMap map) {
+  if (!map.bufp) {
     return {};
   }
+  int n = map.size();
   Pairs pairs;
-  pairs.reserve(map->size());
+  pairs.reserve(n);
+  for (int i = 0; i < n; i++) {
+    auto loc = TSMimeHdrFieldGet(map.bufp, map.hdr_loc, i);
+    int nlen = 0;
+    auto n = TSMimeHdrFieldNameGet(map.bufp, map.hdr_loc, loc, &nlen);
+    int vlen = 0;
+    // TODO: add support for dups.
+    auto v = TSMimeHdrFieldValueStringGet(map.bufp, map.hdr_loc, loc, 0, &vlen);
+    pairs.push_back(std::make_pair(std::string_view(n, (size_t)nlen), std::string_view(v, (size_t)vlen)));
+  }
   return pairs;
 }
 
-Pairs Context::getHeaderMapPairs(HeaderMapType type) { return headerMapToPairs(getConstMap(type)); }
+Pairs Context::getHeaderMapPairs(HeaderMapType type) { return headerMapToPairs(getHeaderMap(type)); }
 
 void Context::setHeaderMapPairs(HeaderMapType type, const Pairs& pairs) {
-  auto map = getMap(type);
-  if (!map) {
+  auto map = getHeaderMap(type);
+  if (!map.bufp) {
     return;
   }
 }
 
 void Context::removeHeaderMapValue(HeaderMapType type, std::string_view key) {
-  auto map = getMap(type);
-  if (!map) {
+  auto map = getHeaderMap(type);
+  if (!map.bufp) {
     return;
   }
 }
 
 void Context::replaceHeaderMapValue(HeaderMapType type, std::string_view key,
                                     std::string_view value) {
-  auto map = getMap(type);
-  if (!map) {
+  auto map = getHeaderMap(type);
+  if (!map.bufp) {
     return;
   }
 }
 
 uint32_t Context::getHeaderMapSize(HeaderMapType type) {
-  auto map = getMap(type);
-  if (!map) {
-    return 0;
-  }
-  return 0;
+  auto map = getHeaderMap(type);
+  if (!map.bufp) return 0;
+  return TSMimeHdrLengthGet(map.bufp, map.hdr_loc);
 }
 
 // Body Buffer
@@ -1609,7 +1616,7 @@ static int http_event_handler(TSCont contp, TSEvent event, void *data)
 
   case TS_EVENT_HTTP_TXN_CLOSE:
     context->onDone();
-    context->onDestroy();
+    context->onDelete();
     TSMutexUnlock(context->wasm()->mutex());
     delete context;
     TSContDestroy(contp);
